@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <title>Piscine Escape – WebXR (Dual move + Debug)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no"/>
+
+  <!-- A-Frame core -->
+  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+
+  <!-- Physique (cannon-es) -->
+  <script src="https://cdn.jsdelivr.net/npm/aframe-physics-system@6.1.0/dist/aframe-physics-system.min.js"></script>
+
+  <!-- Super Hands (grabbable/draggable/stretchable) -->
+  <script src="https://cdn.jsdelivr.net/npm/super-hands@4.0.6/dist/super-hands.min.js"></script>
+
+  <!-- Movement controls -->
+  <script src="https://cdn.jsdelivr.net/npm/aframe-extras@7.7.0/dist/aframe-extras.min.js"></script>
+
+  <!-- Explicit VR joystick support -->
+  <script src="https://cdn.jsdelivr.net/npm/aframe-joystick-controls@3.3.0/dist/aframe-joystick-controls.min.js"></script>
+
+  <script>
+    // Debug des sticks (affiche les axes détectés)
+    AFRAME.registerComponent('stick-debug', {
+      tick: function () {
+        const el = document.querySelector('#debug');
+        if (!el) return;
+        const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+        for (let i = 0; i < pads.length; i++) {
+          const gp = pads[i];
+          if (!gp) continue;
+          const axes = gp.axes || [];
+          const txt = axes.slice(0, 4).map(a => a.toFixed(2)).join(', ');
+          if (txt) { el.setAttribute('value', 'Axes: ' + txt + '\n(Stick gauche: avance/recul/strafe)'); break; }
+        }
+      }
+    });
+  </script>
+
+  <style>
+    #hint {
+      position: fixed; left: 12px; top: 12px; z-index: 9999;
+      background: rgba(0,0,0,.55); color: #fff; font-family: system-ui, sans-serif;
+      padding: 10px 12px; border-radius: 8px; line-height: 1.4; font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <div id="hint">
+    Entrez en VR, puis utilisez le <b>stick gauche</b> pour bouger (libre) et le <b>trigger</b> pour téléporter.<br/>
+    Grip = saisir. Si ça ne bouge pas, appuyez une fois sur le stick (clic) puis relâchez.
+  </div>
+
+  <a-scene physics="debug: false">
+    <!-- Ciel & lumières -->
+    <a-sky color="#87CEFA"></a-sky>
+    <a-entity light="type: ambient; intensity: 0.45"></a-entity>
+    <a-entity light="type: directional; intensity: 0.9" position="0 6 3"></a-entity>
+
+    <!-- Sol large (zone téléportable) -->
+    <a-plane class="teleportable" rotation="-90 0 0" width="40" height="40"
+             color="#C2B280" static-body></a-plane>
+
+    <!-- Bassin “piscine” -->
+    <a-box position="0 0.25 -5" depth="8" height="0.5" width="12"
+           color="#1E90FF" material="opacity:0.6; transparent:true"></a-box>
+    <!-- Murets (un peu plus éloignés pour éviter le spawn derrière) -->
+    <a-box position="0 0.6 1" depth="0.5" height="1.2" width="14" color="#eaeaea" static-body></a-box>
+    <a-box position="0 0.6 -11" depth="0.5" height="1.2" width="14" color="#eaeaea" static-body></a-box>
+    <a-box position="-7 0.6 -5" depth="12" height="1.2" width="0.5" color="#eaeaea" static-body></a-box>
+    <a-box position="7 0.6 -5" depth="12" height="1.2" width="0.5" color="#eaeaea" static-body></a-box>
+
+    <!-- Objets à saisir -->
+    <a-box position="-1 1.2 -3.5" depth="0.4" height="0.4" width="0.4" color="#ff6b6b"
+           class="grabbable" dynamic-body></a-box>
+    <a-sphere position="1 1.6 -4.2" radius="0.25" color="#ffd93d"
+              class="grabbable" dynamic-body></a-sphere>
+    <a-cylinder position="0 1.4 -6" radius="0.2" height="0.5" color="#6bcB77"
+                class="grabbable" dynamic-body></a-cylinder>
+
+    <!-- RIG joueur (spawn bien au centre) -->
+    <a-entity id="rig"
+              position="0 0 -3"
+              movement-controls="fly:false; speed:0.25"
+              joystick-controls="enabled:true; joystick:left; rotation:false; debug:false">
+      <a-entity id="camera" camera look-controls position="0 1.6 0"></a-entity>
+
+      <!-- Contrôleurs VR : téléportation toujours active + super-hands -->
+      <a-entity class="tpctrl"
+                hand-controls="hand: left; handModelStyle: lowPoly; color:#4fc3f7"
+                teleport-controls="cameraRig:#rig; teleportOrigin:#camera; button: trigger; collisionEntities:.teleportable; enabled:true"
+                super-hands sphere-collider="objects:.grabbable"></a-entity>
+
+      <a-entity class="tpctrl"
+                hand-controls="hand: right; handModelStyle: lowPoly; color:#ffab40"
+                teleport-controls="cameraRig:#rig; teleportOrigin:#camera; button: trigger; collisionEntities:.teleportable; enabled:true"
+                super-hands sphere-collider="objects:.grabbable"></a-entity>
+    </a-entity>
+
+    <!-- Debug texte des axes -->
+    <a-text id="debug" value="Axes: --" position="-2 2 -2" width="6" color="#111" stick-debug></a-text>
+  </a-scene>
+</body>
+</html>
