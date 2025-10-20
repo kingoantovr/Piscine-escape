@@ -2,80 +2,156 @@
 <html lang="fr">
 <head>
   <meta charset="utf-8" />
-  <title>Piscine Escape – WebXR (clean)</title>
+  <title>Escape Piscine – 3 pièces (Hall → Vestiaires → Bassin)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no"/>
-
-  <!-- A-Frame -->
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
-  <!-- Environnement prêt à l'emploi (ciel/sol/lumière) -->
   <script src="https://cdn.jsdelivr.net/npm/aframe-environment-component@1.3.3/dist/aframe-environment-component.min.js"></script>
-
-  <!-- Déplacement Quest (stick gauche) -->
-  <script>
-    AFRAME.registerComponent('q3-move', {
-      schema:{speed:{type:'number',default:2.4}, camera:{type:'selector'}},
-      init(){
-        this.input={x:0,y:0};
-        const left = document.querySelector('#leftHand');
-        if (left) {
-          left.addEventListener('thumbstickmoved', e=>{
-            this.input.x = (e.detail && e.detail.x) || 0;
-            this.input.y = (e.detail && e.detail.y) || 0;
-          });
-        }
-      },
-      tick(t,dt){
-        const d = (dt||0)/1000; if(!d) return;
-        const rig = this.el.object3D;
-        const cam = (this.data.camera||document.querySelector('#camera')).object3D;
-        const f = new THREE.Vector3(0,0,-1).applyQuaternion(cam.quaternion); f.y=0; f.normalize();
-        const r = new THREE.Vector3(1,0,0).applyQuaternion(cam.quaternion);  r.y=0; r.normalize();
-        const m = new THREE.Vector3().addScaledVector(r,this.input.x).addScaledVector(f,-this.input.y);
-        if (m.lengthSq()>0){ m.normalize().multiplyScalar(this.data.speed*d); rig.position.add(m); }
-      }
-    });
-  </script>
+  <script src="https://cdn.jsdelivr.net/npm/super-hands@4.0.6/dist/super-hands.min.js"></script>
 
   <style>
     #hud{position:fixed;left:12px;top:12px;z-index:9999;background:rgba(0,0,0,.55);color:#fff;
       font-family:system-ui,sans-serif;padding:10px 12px;border-radius:10px;line-height:1.4;font-size:13px}
   </style>
+
+  <script>
+    /* Déplacement Quest 3 (stick gauche = marcher dans la direction du regard) */
+    AFRAME.registerComponent('q3-move', {
+      schema:{speed:{type:'number',default:2.3}, camera:{type:'selector'}},
+      init(){ this.input={x:0,y:0};
+        const left=document.querySelector('#leftHand');
+        left && left.addEventListener('thumbstickmoved', e=>{
+          this.input.x=(e.detail&&e.detail.x)||0; this.input.y=(e.detail&&e.detail.y)||0;
+        });
+      },
+      tick(t,dt){
+        const d=(dt||0)/1000; if(!d) return;
+        const rig=this.el.object3D;
+        const cam=(this.data.camera||document.querySelector('#camera')).object3D;
+        const f=new THREE.Vector3(0,0,-1).applyQuaternion(cam.quaternion); f.y=0; f.normalize();
+        const r=new THREE.Vector3(1,0,0).applyQuaternion(cam.quaternion);  r.y=0; r.normalize();
+        const m=new THREE.Vector3().addScaledVector(r,this.input.x).addScaledVector(f,-this.input.y);
+        if(m.lengthSq()>0){ m.normalize().multiplyScalar(this.data.speed*d); rig.position.add(m); }
+      }
+    });
+
+    /* État global du jeu (badge & clé) */
+    AFRAME.registerComponent('game-state', {
+      schema:{hasBadge:{default:false}, hasKey:{default:false}},
+      setFlag(flag, val){
+        this.data[flag]=val;
+        const txt=document.querySelector('#status');
+        if(txt){ txt.setAttribute('value', `Badge: ${this.data.hasBadge?'✓':'✗'}   Clé: ${this.data.hasKey?'✓':'✗'}`); }
+      }
+    });
+
+    /* Quand on attrape un objet, on coche un flag (badge ou clé) */
+    AFRAME.registerComponent('pickup-flag', {
+      schema:{flag:{type:'string'}},
+      init(){
+        const scene=this.el.sceneEl;
+        const setIt=()=>{ scene.components['game-state'].setFlag(this.data.flag,true); };
+        this.el.addEventListener('grab-start', setIt);
+        this.el.addEventListener('click', setIt); // au cas où (PC/sans grip)
+      }
+    });
+
+    /* Porte qui s’ouvre si condition remplie (requires: 'badge' ou 'key') */
+    AFRAME.registerComponent('door', {
+      schema:{requires:{type:'string'}, target:{type:'vec3'}, speed:{type:'number',default:800}},
+      init(){ this.opened=false; },
+      tryOpen(){
+        if(this.opened) return;
+        const gs=this.el.sceneEl.components['game-state'].data;
+        const ok = this.data.requires==='badge' ? gs.hasBadge : gs.hasKey;
+        if(ok){
+          this.opened=true;
+          this.el.setAttribute('animation__open', {
+            property:'position', to:`${this.data.target.x} ${this.data.target.y} ${this.data.target.z}`,
+            dur:this.data.speed, easing:'easeOutQuad'
+          });
+        } else {
+          const hint=document.querySelector('#hint');
+          if (hint) hint.setAttribute('value', this.data.requires==='badge' ? "Il faut le badge de l'accueil." : "Il faut la clé du vestiaire.");
+          setTimeout(()=>{ document.querySelector('#hint').setAttribute('value',''); }, 1500);
+        }
+      }
+    });
+
+    /* Panel d’ouverture : au clic, demande à la porte d’ouvrir */
+    AFRAME.registerComponent('use-panel', {
+      schema:{door:{type:'selector'}},
+      init(){
+        this.el.addEventListener('click', ()=> this.data.door.components.door.tryOpen());
+        this.el.addEventListener('grab-start', ()=> this.data.door.components.door.tryOpen());
+      }
+    });
+  </script>
 </head>
 <body>
   <div id="hud">Enter VR • Stick gauche = marcher • Trigger = téléporter • Grip = saisir</div>
 
-  <a-scene renderer="antialias: true; physicallyCorrectLights: true" background="color: #dfefff">
-    <!-- Environnement automatique (joli ciel + sol texturé) -->
-    <a-entity environment="preset: forest; lighting: distant; ground: canyon; groundTexture: walkernoise"></a-entity>
+  <a-scene game-state>
+    <!-- Environnement global -->
+    <a-entity environment="preset: forest; lighting: distant; ground: hills; groundTexture: walkernoise; skyType: gradient"></a-entity>
 
-    <!-- Sol invisible mais téléportable (grand disque) -->
-    <a-circle class="teleportable" radius="25" rotation="-90 0 0" color="#000" opacity="0" visible="true"></a-circle>
+    <!-- ====== SALLE 1 : ACCUEIL (autour de X=0) ====== -->
+    <a-entity id="room-hall" position="0 0 0">
+      <!-- sol téléportable large (disque invisible) -->
+      <a-circle class="teleportable" radius="10" rotation="-90 0 0" color="#000" opacity="0"></a-circle>
+      <a-text value="Accueil" position="-1.5 2 -2.5" color="#111" width="4"></a-text>
 
-    <!-- Bassin simple -->
-    <a-box position="0 0.25 -6" depth="8" height="0.5" width="12" color="#1E90FF" material="opacity:0.7; transparent:true"></a-box>
-    <a-box position="0 0.6 -2" depth="0.5" height="1.2" width="12" color="#E5E5E5"></a-box>
-    <a-box position="0 0.6 -10" depth="0.5" height="1.2" width="12" color="#E5E5E5"></a-box>
-    <a-box position="-6 0.6 -6" depth="8" height="1.2" width="0.5" color="#E5E5E5"></a-box>
-    <a-box position="6 0.6 -6" depth="8" height="1.2" width="0.5" color="#E5E5E5"></a-box>
+      <!-- comptoir -->
+      <a-box position="0 1 -3" depth="0.8" height="1" width="3" color="#c9c4b6"></a-box>
 
-    <!-- Objets à manipuler -->
-    <a-box position="-1 1.2 -4.5" depth="0.45" height="0.45" width="0.45" color="#ff6b6b"></a-box>
-    <a-sphere position="1 1.6 -5.2" radius="0.28" color="#ffd93d"></a-sphere>
-    <a-cylinder position="0 1.3 -7" radius="0.22" height="0.55" color="#6bcb77"></a-cylinder>
+      <!-- badge à prendre -->
+      <a-box id="badge" position="-0.8 1.3 -2.8" depth="0.06" height="0.2" width="0.3" color="#3fb5ff"
+             class="grabbable" pickup-flag="flag:hasBadge"></a-box>
+      <a-text value="Badge" position="-1.05 1.6 -2.75" width="2" color="#111"></a-text>
 
-    <!-- Joueur -->
-    <a-entity id="rig" position="0 0 -3" q3-move="speed:2.4; camera:#camera">
-      <a-entity id="camera" camera look-controls position="0 1.6 0"></a-entity>
-
-      <!-- Mains + téléportation (trigger) -->
-      <a-entity id="leftHand"
-        hand-controls="hand: left; handModelStyle: lowPoly; color:#4fc3f7"
-        teleport-controls="cameraRig:#rig; teleportOrigin:#camera; button: trigger; collisionEntities:.teleportable; enabled:true"></a-entity>
-
-      <a-entity id="rightHand"
-        hand-controls="hand: right; handModelStyle: lowPoly; color:#ffab40"
-        teleport-controls="cameraRig:#rig; teleportOrigin:#camera; button: trigger; collisionEntities:.teleportable; enabled:true"></a-entity>
+      <!-- porte vers vestiaires (coulissante vers le haut) -->
+      <a-box id="door1" position="6 1 -3" depth="0.2" height="2" width="2.4" color="#888"
+             door="requires: badge; target: 6 3 -3"></a-box>
+      <!-- panneau pour ouvrir (bornes côté porte) -->
+      <a-box position="5.3 1 -2.2" depth="0.05" height="0.4" width="0.3" color="#2b6cb0"
+             use-panel="door: #door1"></a-box>
     </a-entity>
-  </a-scene>
-</body>
-</html>
+
+    <!-- ====== SALLE 2 : VESTIAIRES (décalée à X=25) ====== -->
+    <a-entity id="room-locker" position="25 0 0">
+      <a-circle class="teleportable" radius="10" rotation="-90 0 0" color="#000" opacity="0"></a-circle>
+      <a-text value="Vestiaires" position="-1.5 2 -2.5" color="#111" width="4"></a-text>
+
+      <!-- casiers simples -->
+      <a-box position="0 1 -3" depth="0.5" height="1.6" width="3" color="#b9b9b9"></a-box>
+      <a-box position="0 1 -3.5" depth="0.05" height="1.5" width="2.8" color="#8a8a8a"></a-box>
+
+      <!-- clé à prendre -->
+      <a-box id="key" position="1 1.2 -2" depth="0.1" height="0.2" width="0.5" color="#ffd93d"
+             class="grabbable" pickup-flag="flag:hasKey"></a-box>
+      <a-text value="Clé" position="0.85 1.55 -1.95" width="2" color="#111"></a-text>
+
+      <!-- porte vers bassin -->
+      <a-box id="door2" position="6 1 -3" depth="0.2" height="2" width="2.4" color="#888"
+             door="requires: key; target: 6 3 -3"></a-box>
+      <a-box position="5.3 1 -2.2" depth="0.05" height="0.4" width="0.3" color="#2b6cb0"
+             use-panel="door: #door2"></a-box>
+    </a-entity>
+
+    <!-- ====== SALLE 3 : BASSIN (décalée à X=50) ====== -->
+    <a-entity id="room-pool" position="50 0 0">
+      <a-circle class="teleportable" radius="12" rotation="-90 0 0" color="#000" opacity="0"></a-circle>
+      <a-text value="Bassin" position="-1.5 2 -2.5" color="#111" width="4"></a-text>
+
+      <!-- bassin simplifié -->
+      <a-box position="0 0.25 -6" depth="8" height="0.5" width="12" color="#1E90FF" material="opacity:0.7; transparent:true"></a-box>
+      <a-box position="0 0.6 -2" depth="0.5" height="1.2" width="12" color="#E5E5E5"></a-box>
+      <a-box position="0 0.6 -10" depth="0.5" height="1.2" width="12" color="#E5E5E5"></a-box>
+      <a-box position="-6 0.6 -6" depth="8" height="1.2" width="0.5" color="#E5E5E5"></a-box>
+      <a-box position="6 0.6 -6" depth="8" height="1.2" width="0.5" color="#E5E5E5"></a-box>
+
+      <!-- sortie finale (porte déjà ouverte pour l’instant) -->
+      <a-text value="Bravo ! Sortie" position="6 2 -3" width="4" color="#0a0"></a-text>
+    </a-entity>
+
+    <!-- Texte d’état et hints -->
+    <a-text id="status" value="Badge: ✗   Clé: ✗" position="0 2 -
