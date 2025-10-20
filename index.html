@@ -1,157 +1,156 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="utf-8" />
-  <title>Escape Piscine – 3 pièces (Hall → Vestiaires → Bassin)</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no"/>
-  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/aframe-environment-component@1.3.3/dist/aframe-environment-component.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/super-hands@4.0.6/dist/super-hands.min.js"></script>
+<meta charset="utf-8"/>
+<title>Escape Piscine – 3 pièces contiguës</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no"/>
+<script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/super-hands@4.0.6/dist/super-hands.min.js"></script>
 
-  <style>
-    #hud{position:fixed;left:12px;top:12px;z-index:9999;background:rgba(0,0,0,.55);color:#fff;
-      font-family:system-ui,sans-serif;padding:10px 12px;border-radius:10px;line-height:1.4;font-size:13px}
-  </style>
+<style>
+  #hud{position:fixed;left:12px;top:12px;z-index:9999;background:rgba(0,0,0,.55);color:#fff;
+       font-family:system-ui,sans-serif;padding:10px 12px;border-radius:10px;line-height:1.4;font-size:13px}
+</style>
 
-  <script>
-    /* Déplacement Quest 3 (stick gauche = marcher dans la direction du regard) */
-    AFRAME.registerComponent('q3-move', {
-      schema:{speed:{type:'number',default:2.3}, camera:{type:'selector'}},
-      init(){ this.input={x:0,y:0};
-        const left=document.querySelector('#leftHand');
-        left && left.addEventListener('thumbstickmoved', e=>{
-          this.input.x=(e.detail&&e.detail.x)||0; this.input.y=(e.detail&&e.detail.y)||0;
-        });
-      },
-      tick(t,dt){
-        const d=(dt||0)/1000; if(!d) return;
-        const rig=this.el.object3D;
-        const cam=(this.data.camera||document.querySelector('#camera')).object3D;
-        const f=new THREE.Vector3(0,0,-1).applyQuaternion(cam.quaternion); f.y=0; f.normalize();
-        const r=new THREE.Vector3(1,0,0).applyQuaternion(cam.quaternion);  r.y=0; r.normalize();
-        const m=new THREE.Vector3().addScaledVector(r,this.input.x).addScaledVector(f,-this.input.y);
-        if(m.lengthSq()>0){ m.normalize().multiplyScalar(this.data.speed*d); rig.position.add(m); }
-      }
-    });
+<script>
+  /* Déplacement Quest 3 (stick gauche) */
+  AFRAME.registerComponent('q3-move',{
+    schema:{speed:{type:'number',default:2.2},camera:{type:'selector'}},
+    init(){this.input={x:0,y:0}; const L=document.querySelector('#leftHand');
+      L&&L.addEventListener('thumbstickmoved',e=>{this.input.x=e.detail?.x||0; this.input.y=e.detail?.y||0;});},
+    tick(t,dt){const d=(dt||0)/1000; if(!d)return;
+      const rig=this.el.object3D, cam=(this.data.camera||document.querySelector('#camera')).object3D;
+      const f=new THREE.Vector3(0,0,-1).applyQuaternion(cam.quaternion); f.y=0; f.normalize();
+      const r=new THREE.Vector3(1,0,0).applyQuaternion(cam.quaternion);  r.y=0; r.normalize();
+      const m=new THREE.Vector3().addScaledVector(r,this.input.x).addScaledVector(f,-this.input.y);
+      if(m.lengthSq()>0){m.normalize().multiplyScalar(this.data.speed*d); rig.position.add(m);}
+    }
+  });
 
-    /* État global du jeu (badge & clé) */
-    AFRAME.registerComponent('game-state', {
-      schema:{hasBadge:{default:false}, hasKey:{default:false}},
-      setFlag(flag, val){
-        this.data[flag]=val;
-        const txt=document.querySelector('#status');
-        if(txt){ txt.setAttribute('value', `Badge: ${this.data.hasBadge?'✓':'✗'}   Clé: ${this.data.hasKey?'✓':'✗'}`); }
-      }
-    });
+  /* État jeu + portes */
+  AFRAME.registerComponent('game-state',{schema:{hasBadge:{default:false},hasKey:{default:false}},
+    setFlag(flag,v){this.data[flag]=v; const s=document.querySelector('#status');
+      s&&s.setAttribute('value',`Badge: ${this.data.hasBadge?'✓':'✗'}   Clé: ${this.data.hasKey?'✓':'✗'}`);}
+  });
 
-    /* Quand on attrape un objet, on coche un flag (badge ou clé) */
-    AFRAME.registerComponent('pickup-flag', {
-      schema:{flag:{type:'string'}},
-      init(){
-        const scene=this.el.sceneEl;
-        const setIt=()=>{ scene.components['game-state'].setFlag(this.data.flag,true); };
-        this.el.addEventListener('grab-start', setIt);
-        this.el.addEventListener('click', setIt); // au cas où (PC/sans grip)
-      }
-    });
+  AFRAME.registerComponent('pickup-flag',{schema:{flag:'string'},
+    init(){const scene=this.el.sceneEl; const set=()=>scene.components['game-state'].setFlag(this.data.flag,true);
+      this.el.addEventListener('grab-start',set); this.el.addEventListener('click',set);}
+  });
 
-    /* Porte qui s’ouvre si condition remplie (requires: 'badge' ou 'key') */
-    AFRAME.registerComponent('door', {
-      schema:{requires:{type:'string'}, target:{type:'vec3'}, speed:{type:'number',default:800}},
-      init(){ this.opened=false; },
-      tryOpen(){
-        if(this.opened) return;
-        const gs=this.el.sceneEl.components['game-state'].data;
-        const ok = this.data.requires==='badge' ? gs.hasBadge : gs.hasKey;
-        if(ok){
-          this.opened=true;
-          this.el.setAttribute('animation__open', {
-            property:'position', to:`${this.data.target.x} ${this.data.target.y} ${this.data.target.z}`,
-            dur:this.data.speed, easing:'easeOutQuad'
-          });
-        } else {
-          const hint=document.querySelector('#hint');
-          if (hint) hint.setAttribute('value', this.data.requires==='badge' ? "Il faut le badge de l'accueil." : "Il faut la clé du vestiaire.");
-          setTimeout(()=>{ document.querySelector('#hint').setAttribute('value',''); }, 1500);
-        }
-      }
-    });
+  AFRAME.registerComponent('door',{schema:{requires:'string',slide:'vec3',dur:{type:'number',default:700}},
+    init(){this.opened=false;},
+    tryOpen(){ if(this.opened) return;
+      const gs=this.el.sceneEl.components['game-state'].data;
+      const ok=this.data.requires==='badge'?gs.hasBadge:gs.hasKey;
+      if(ok){ this.opened=true;
+        this.el.setAttribute('animation__open',{property:'position',to:`${this.data.slide.x} ${this.data.slide.y} ${this.data.slide.z}`,dur:this.data.dur,easing:'easeOutQuad'});
+      } else {const h=document.querySelector('#hint'); h.setAttribute('value', this.data.requires==='badge'?'Il faut le badge.':'Il faut la clé.');
+               setTimeout(()=>h.setAttribute('value',''),1200);}
+    }
+  });
 
-    /* Panel d’ouverture : au clic, demande à la porte d’ouvrir */
-    AFRAME.registerComponent('use-panel', {
-      schema:{door:{type:'selector'}},
-      init(){
-        this.el.addEventListener('click', ()=> this.data.door.components.door.tryOpen());
-        this.el.addEventListener('grab-start', ()=> this.data.door.components.door.tryOpen());
-      }
-    });
-  </script>
+  AFRAME.registerComponent('use-panel',{schema:{door:{type:'selector'}},
+    init(){const f=()=>this.data.door.components.door.tryOpen();
+      this.el.addEventListener('click',f); this.el.addEventListener('grab-start',f);}
+  });
+</script>
 </head>
 <body>
-  <div id="hud">Enter VR • Stick gauche = marcher • Trigger = téléporter • Grip = saisir</div>
+<div id="hud">Enter VR • Stick gauche = marcher • Trigger = téléporter • Grip = saisir</div>
 
-  <a-scene game-state>
-    <!-- Environnement global -->
-    <a-entity environment="preset: forest; lighting: distant; ground: hills; groundTexture: walkernoise; skyType: gradient"></a-entity>
+<a-scene game-state background="color:#dde6f3">
+  <!-- Lumières intérieures -->
+  <a-entity light="type:ambient; intensity:0.5"></a-entity>
+  <a-entity light="type:directional; intensity:0.9" position="0 6 3"></a-entity>
 
-    <!-- ====== SALLE 1 : ACCUEIL (autour de X=0) ====== -->
-    <a-entity id="room-hall" position="0 0 0">
-      <!-- sol téléportable large (disque invisible) -->
-      <a-circle class="teleportable" radius="10" rotation="-90 0 0" color="#000" opacity="0"></a-circle>
-      <a-text value="Accueil" position="-1.5 2 -2.5" color="#111" width="4"></a-text>
+  <!-- Plateau: sol unique + plafond -->
+  <a-plane class="teleportable" rotation="-90 0 0" width="36" height="12" color="#c7c3bd"></a-plane>
+  <a-plane rotation="90 0 0" position="0 3 0" width="36" height="12" color="#eef2f6"></a-plane>
 
-      <!-- comptoir -->
-      <a-box position="0 1 -3" depth="0.8" height="1" width="3" color="#c9c4b6"></a-box>
+  <!-- === Dimension de chaque pièce: 12m x 12m, collées sur l'axe X === -->
+  <!-- MURS (épaisseur 0.2) -->
+  <!-- Accueil (x= -12 à 0) -->
+  <a-entity position="-12 0 0">
+    <!-- murs périphériques -->
+    <a-box position="0 1.5 -6" depth="0.2" height="3" width="12" color="#e8e8e8"></a-box>
+    <a-box position="0 1.5  6" depth="0.2" height="3" width="12" color="#e8e8e8"></a-box>
+    <a-box position="-6 1.5 0" depth="12" height="3" width="0.2" color="#e8e8e8"></a-box>
+    <!-- mur partagé avec vestiaires, avec PORTE à x=+6 -->
+    <a-box position="6 1.5 0" depth="12" height="3" width="0.2" color="#e8e8e8"></a-box>
 
-      <!-- badge à prendre -->
-      <a-box id="badge" position="-0.8 1.3 -2.8" depth="0.06" height="0.2" width="0.3" color="#3fb5ff"
-             class="grabbable" pickup-flag="flag:hasBadge"></a-box>
-      <a-text value="Badge" position="-1.05 1.6 -2.75" width="2" color="#111"></a-text>
+    <a-text value="Accueil" position="-3 2 -4" width="5" color="#111"></a-text>
+    <a-box position="-3 1 -3" depth="0.8" height="1" width="4" color="#c9c4b6"></a-box>
 
-      <!-- porte vers vestiaires (coulissante vers le haut) -->
-      <a-box id="door1" position="6 1 -3" depth="0.2" height="2" width="2.4" color="#888"
-             door="requires: badge; target: 6 3 -3"></a-box>
-      <!-- panneau pour ouvrir (bornes côté porte) -->
-      <a-box position="5.3 1 -2.2" depth="0.05" height="0.4" width="0.3" color="#2b6cb0"
-             use-panel="door: #door1"></a-box>
-    </a-entity>
+    <!-- Badge -->
+    <a-box id="badge" position="-3.8 1.3 -2.8" depth="0.06" height="0.2" width="0.3" color="#3fb5ff"
+           class="grabbable" pickup-flag="flag:hasBadge"></a-box>
+    <a-text value="Badge" position="-4.05 1.6 -2.75" width="2" color="#111"></a-text>
 
-    <!-- ====== SALLE 2 : VESTIAIRES (décalée à X=25) ====== -->
-    <a-entity id="room-locker" position="25 0 0">
-      <a-circle class="teleportable" radius="10" rotation="-90 0 0" color="#000" opacity="0"></a-circle>
-      <a-text value="Vestiaires" position="-1.5 2 -2.5" color="#111" width="4"></a-text>
+    <!-- PORTE1 (dans le mur droit) qui glisse vers le HAUT -->
+    <a-box id="door1" position="6 1 -1.5" depth="0.21" height="2" width="1.8" color="#888"
+           door="requires: badge; slide: 6 3.2 -1.5"></a-box>
+    <a-box position="5.4 1 -2.3" depth="0.05" height="0.4" width="0.3" color="#2b6cb0"
+           use-panel="door:#door1"></a-box>
+  </a-entity>
 
-      <!-- casiers simples -->
-      <a-box position="0 1 -3" depth="0.5" height="1.6" width="3" color="#b9b9b9"></a-box>
-      <a-box position="0 1 -3.5" depth="0.05" height="1.5" width="2.8" color="#8a8a8a"></a-box>
+  <!-- Vestiaires (x= 0 à +12) -->
+  <a-entity position="0 0 0">
+    <!-- murs -->
+    <a-box position="0 1.5 -6" depth="0.2" height="3" width="12" color="#e8e8e8"></a-box>
+    <a-box position="0 1.5  6" depth="0.2" height="3" width="12" color="#e8e8e8"></a-box>
+    <!-- murs latéraux: gauche partagé avec accueil (déjà), droit vers bassin -->
+    <a-box position="6 1.5 0" depth="12" height="3" width="0.2" color="#e8e8e8"></a-box>
+    <a-box position="-6 1.5 0" depth="12" height="3" width="0.2" color="#e8e8e8"></a-box>
 
-      <!-- clé à prendre -->
-      <a-box id="key" position="1 1.2 -2" depth="0.1" height="0.2" width="0.5" color="#ffd93d"
-             class="grabbable" pickup-flag="flag:hasKey"></a-box>
-      <a-text value="Clé" position="0.85 1.55 -1.95" width="2" color="#111"></a-text>
+    <a-text value="Vestiaires" position="-3 2 -4" width="5" color="#111"></a-text>
+    <!-- casiers -->
+    <a-box position="-2 1 -3" depth="0.5" height="1.6" width="4" color="#b9b9b9"></a-box>
+    <a-box position="-2 1 -3.5" depth="0.05" height="1.5" width="3.8" color="#8a8a8a"></a-box>
 
-      <!-- porte vers bassin -->
-      <a-box id="door2" position="6 1 -3" depth="0.2" height="2" width="2.4" color="#888"
-             door="requires: key; target: 6 3 -3"></a-box>
-      <a-box position="5.3 1 -2.2" depth="0.05" height="0.4" width="0.3" color="#2b6cb0"
-             use-panel="door: #door2"></a-box>
-    </a-entity>
+    <!-- Clé -->
+    <a-box id="key" position="2.2 1.2 -2" depth="0.1" height="0.2" width="0.5" color="#ffd93d"
+           class="grabbable" pickup-flag="flag:hasKey"></a-box>
+    <a-text value="Clé" position="2.05 1.55 -1.95" width="2" color="#111"></a-text>
 
-    <!-- ====== SALLE 3 : BASSIN (décalée à X=50) ====== -->
-    <a-entity id="room-pool" position="50 0 0">
-      <a-circle class="teleportable" radius="12" rotation="-90 0 0" color="#000" opacity="0"></a-circle>
-      <a-text value="Bassin" position="-1.5 2 -2.5" color="#111" width="4"></a-text>
+    <!-- PORTE2 dans le mur droit -->
+    <a-box id="door2" position="6 1 -1.5" depth="0.21" height="2" width="1.8" color="#888"
+           door="requires: key; slide: 6 3.2 -1.5"></a-box>
+    <a-box position="5.4 1 -2.3" depth="0.05" height="0.4" width="0.3" color="#2b6cb0"
+           use-panel="door:#door2"></a-box>
+  </a-entity>
 
-      <!-- bassin simplifié -->
-      <a-box position="0 0.25 -6" depth="8" height="0.5" width="12" color="#1E90FF" material="opacity:0.7; transparent:true"></a-box>
-      <a-box position="0 0.6 -2" depth="0.5" height="1.2" width="12" color="#E5E5E5"></a-box>
-      <a-box position="0 0.6 -10" depth="0.5" height="1.2" width="12" color="#E5E5E5"></a-box>
-      <a-box position="-6 0.6 -6" depth="8" height="1.2" width="0.5" color="#E5E5E5"></a-box>
-      <a-box position="6 0.6 -6" depth="8" height="1.2" width="0.5" color="#E5E5E5"></a-box>
+  <!-- Bassin (x= +12 à +24) -->
+  <a-entity position="12 0 0">
+    <!-- murs -->
+    <a-box position="0 1.5 -6" depth="0.2" height="3" width="12" color="#e8e8e8"></a-box>
+    <a-box position="0 1.5  6" depth="0.2" height="3" width="12" color="#e8e8e8"></a-box>
+    <a-box position="6 1.5 0" depth="12" height="3" width="0.2" color="#e8e8e8"></a-box>
+    <a-box position="-6 1.5 0" depth="12" height="3" width="0.2" color="#e8e8e8"></a-box>
 
-      <!-- sortie finale (porte déjà ouverte pour l’instant) -->
-      <a-text value="Bravo ! Sortie" position="6 2 -3" width="4" color="#0a0"></a-text>
-    </a-entity>
+    <a-text value="Bassin" position="-3 2 -4" width="5" color="#111"></a-text>
+    <!-- simple bassin visuel -->
+    <a-box position="0 0.25 -4.5" depth="5" height="0.5" width="8" color="#1E90FF" material="opacity:0.7; transparent:true"></a-box>
 
-    <!-- Texte d’état et hints -->
-    <a-text id="status" value="Badge: ✗   Clé: ✗" position="0 2 -
+    <a-text value="Bravo ! (zone finale)" position="2 2 -2.5" width="4" color="#0a0"></a-text>
+  </a-entity>
+
+  <!-- UI état -->
+  <a-text id="status" value="Badge: ✗   Clé: ✗" position="-2 2 -1.6" width="4" color="#111"></a-text>
+  <a-text id="hint"   value=""                 position="-2 1.7 -1.6" width="4" color="#b00"></a-text>
+
+  <!-- Joueur -->
+  <a-entity id="rig" position="-12 0 -2" q3-move="speed:2.2; camera:#camera">
+    <a-entity id="camera" camera look-controls position="0 1.6 0"></a-entity>
+    <a-entity id="leftHand"
+      hand-controls="hand: left; handModelStyle: lowPoly; color:#4fc3f7"
+      teleport-controls="cameraRig:#rig; teleportOrigin:#camera; button: trigger; collisionEntities:.teleportable; enabled:true"
+      super-hands sphere-collider="objects:.grabbable"></a-entity>
+    <a-entity id="rightHand"
+      hand-controls="hand: right; handModelStyle: lowPoly; color:#ffab40"
+      teleport-controls="cameraRig:#rig; teleportOrigin:#camera; button: trigger; collisionEntities:.teleportable; enabled:true"
+      super-hands sphere-collider="objects:.grabbable"></a-entity>
+  </a-entity>
+</a-scene>
+</body>
+</html>
