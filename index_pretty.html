@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang=\"fr\">
+<head>
+  <meta charset=\"utf-8\" />
+  <title>Piscine Escape – WebXR (Qualité améliorée)</title>
+  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1, user-scalable=no\"/>
+
+  <script src=\"https://aframe.io/releases/1.5.0/aframe.min.js\"></script>
+  <script src=\"https://cdn.jsdelivr.net/npm/aframe-environment-component@1.3.3/dist/aframe-environment-component.min.js\"></script>
+  <script src=\"https://unpkg.com/aframe-water@3.3.1/dist/aframe-water.min.js\"></script>
+  <script src=\"https://cdn.jsdelivr.net/npm/aframe-physics-system@6.1.0/dist/aframe-physics-system.min.js\"></script>
+  <script src=\"https://cdn.jsdelivr.net/npm/super-hands@4.0.6/dist/super-hands.min.js\"></script>
+
+  <script>
+    AFRAME.registerComponent('q3-move', {
+      schema:{speed:{type:'number',default:2.4}, camera:{type:'selector'}},
+      init(){
+        this.input={x:0,y:0};
+        const left = document.querySelector('#leftHand');
+        left && left.addEventListener('thumbstickmoved', e=>{
+          this.input.x = e.detail?.x||0;
+          this.input.y = e.detail?.y||0;
+        });
+      },
+      tick(t,dt){
+        const d=(dt||0)/1000; if(!d) return;
+        const rig=this.el.object3D;
+        const cam=(this.data.camera||document.querySelector('#camera')).object3D;
+        const f=new THREE.Vector3(0,0,-1).applyQuaternion(cam.quaternion); f.y=0; f.normalize();
+        const r=new THREE.Vector3(1,0,0).applyQuaternion(cam.quaternion); r.y=0; r.normalize();
+        const m=new THREE.Vector3().addScaledVector(r,this.input.x).addScaledVector(f,-this.input.y);
+        if(m.lengthSq()>0){ m.normalize().multiplyScalar(this.data.speed*d); rig.position.add(m); }
+      }
+    });
+  </script>
+
+  <style>
+    #hud{position:fixed;left:12px;top:12px;z-index:9999;background:rgba(0,0,0,.55);color:#fff;
+      font-family:system-ui,sans-serif;padding:10px 12px;border-radius:10px;line-height:1.4;font-size:13px}
+  </style>
+</head>
+<body>
+  <div id=\"hud\">Entrez en VR • Stick gauche = marcher • Trigger = téléporter • Grip = saisir</div>
+
+  <a-scene renderer=\"colorManagement: true; physicallyCorrectLights: true; antialias: true;\"
+           shadow=\"type: pcfsoft\" physics=\"debug:false\">
+    <a-entity environment=\"preset: forest; lighting: distant; ground: canyon; groundColor: #cbb997; groundTexture: walkernoise; skyType: gradient; fog: 0.2\"></a-entity>
+    <a-entity light=\"type: directional; intensity: 1.1; castShadow: true\" position=\"2 8 3\"></a-entity>
+    <a-entity light=\"type: ambient; intensity: 0.35\"></a-entity>
+
+    <a-circle radius=\"18\" position=\"0 0 -4\" rotation=\"-90 0 0\" color=\"#e8e2d0\" shadow=\"receive: true\"></a-circle>
+
+    <a-entity position=\"0 0 -6\">
+      <a-box position=\"0 0.6 0\" depth=\"8\" height=\"1.2\" width=\"12\" color=\"#E5E5E5\" shadow=\"receive:true; cast:true\" static-body></a-box>
+      <a-entity id=\"water\" geometry=\"primitive: plane; width: 11.8; height: 7.8\"
+                rotation=\"-90 0 0\" position=\"0 0.61 0\"
+                water=\"color: #4db7ff; opacity: 0.85; distortionScale: 0.15; speed: 1.2\"></a-entity>
+    </a-entity>
+
+    <a-box position=\"-1 1.2 -4.5\" depth=\"0.45\" height=\"0.45\" width=\"0.45\" color=\"#ff6b6b\"
+           material=\"metalness: 0.2; roughness: 0.5\" shadow=\"cast: true; receive: true\"
+           class=\"grabbable\" dynamic-body></a-box>
+    <a-sphere position=\"1 1.6 -5.2\" radius=\"0.28\" color=\"#ffd93d\"
+           material=\"metalness: 0.1; roughness: 0.3\" shadow=\"cast: true; receive: true\"
+           class=\"grabbable\" dynamic-body></a-sphere>
+    <a-cylinder position=\"0 1.3 -7\" radius=\"0.22\" height=\"0.55\" color=\"#6bcb77\"
+           material=\"metalness: 0.2; roughness: 0.4\" shadow=\"cast: true; receive: true\"
+           class=\"grabbable\" dynamic-body></a-cylinder>
+
+    <a-circle class=\"teleportable\" radius=\"20\" rotation=\"-90 0 0\" color=\"#000\" opacity=\"0\" visible=\"false\"></a-circle>
+
+    <a-entity id=\"rig\" position=\"0 0 -3\" q3-move=\"speed:2.4; camera:#camera\">
+      <a-entity id=\"camera\" camera look-controls position=\"0 1.6 0\"></a-entity>
+
+      <a-entity id=\"leftHand\"
+        hand-controls=\"hand: left; handModelStyle: lowPoly; color:#4fc3f7\"
+        teleport-controls=\"cameraRig:#rig; teleportOrigin:#camera; button: trigger; collisionEntities:.teleportable; enabled:true\"
+        super-hands sphere-collider=\"objects:.grabbable\"></a-entity>
+
+      <a-entity id=\"rightHand\"
+        hand-controls=\"hand: right; handModelStyle: lowPoly; color:#ffab40\"
+        teleport-controls=\"cameraRig:#rig; teleportOrigin:#camera; button: trigger; collisionEntities:.teleportable; enabled:true\"
+        super-hands sphere-collider=\"objects:.grabbable\"></a-entity>
+    </a-entity>
+  </a-scene>
+</body>
+</html>
